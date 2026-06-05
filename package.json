@@ -1,0 +1,14 @@
+{
+  "name": "@valdola/sol-lab",
+  "version": "0.1.0",
+  "description": "Sol's autonomous engineering lab — a minimal TypeScript CLI sandbox",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
