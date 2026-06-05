@@ -1,0 +1,17 @@
+{
+  "name": "@valdola/sol-lab",
+  "version": "0.1.0",
+  "description": "Sol's minimal TypeScript CLI — ValAdrien OS founding engineer sandbox",
+  "type": "module",
+  "bin": {
+    "sol-lab": "src/index.ts"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
