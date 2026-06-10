@@ -1,6 +1,10 @@
 node_modules
 dist
 
+# Health-check circuit-breaker state (HEALTH_CB_STATE_DIR), if pointed at the repo
+valadrien-health-cb
+cb-*.json
+
 # Secrets — never commit. Use .env.example as the template.
 .env
 .env.*
