@@ -167,8 +167,10 @@ export async function recordFailure(
   const existing = await findOpenAlert(cfg, key);
 
   if (existing) {
+    // NOTE: the POST /comments route expects `body`; the PATCH /issues route
+    // uses `comment`. They are not interchangeable.
     await api(cfg, "POST", `/api/issues/${existing.id}/comments`, {
-      comment: `🔴 Health check still failing.\n\n${failureDetails(result, at)}`,
+      body: `🔴 Health check still failing.\n\n${failureDetails(result, at)}`,
     });
     return { id: existing.id, identifier: existing.identifier, created: false };
   }

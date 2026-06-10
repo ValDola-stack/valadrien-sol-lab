@@ -37,7 +37,20 @@ npm start
 
 ## Health Check
 
-Recurring API health check that monitors `https://os.valadrien.dev/api/health` and alerts to Slack #eng-alerts on failures.
+Recurring check that monitors `https://os.valadrien.dev/api/health` and alerts
+on failure. Readiness is `status == "ok"` and not still `booting`.
+
+### Alerting
+
+**Primary — ValAdrien OS board (no external secret):** on failure the check
+opens a `critical` issue via the OS API using the runner's own credential, and
+@mentions on-call. It is **de-duped** — while the check stays red, new failures
+are added as comments on the existing issue instead of spawning a new one each
+cycle — and it **auto-resolves** (closes the issue with a "recovered" note) when
+the check goes green again. See `scripts/os-alert-sink.ts`.
+
+**Optional — Slack:** if `SLACK_WEBHOOK_URL` is set, alerts are *also* posted to
+#eng-alerts, in addition to the OS issue. Leave it blank to use the board only.
 
 ### Setup
 
@@ -46,14 +59,13 @@ Recurring API health check that monitors `https://os.valadrien.dev/api/health` a
    cp .env.example .env
    ```
 
-2. **Configure Slack webhook:**
-   - Add the `SLACK_WEBHOOK_URL` to your `.env` file
-   - Get the webhook URL from:
-     - ValAdrien OS secrets store (preferred)
-     - Slack workspace admin (create incoming webhook for #eng-alerts)
-   - Format: `https://hooks.slack.com/services/T.../B.../...`
+2. **Configure OS credentials** (`VALADRIEN_OS_API_URL`, `VALADRIEN_OS_API_KEY`,
+   `VALADRIEN_OS_COMPANY_ID`) so the runner can file alert issues. In production
+   give the runner a long-lived agent key (`POST /api/agents/{agentId}/keys`),
+   not a per-run JWT. Optionally set `HEALTH_ALERT_PROJECT_ID` and
+   `HEALTH_ALERT_ONCALL_AGENT_ID` / `HEALTH_ALERT_ONCALL_NAME`.
 
-3. **Validate configuration:**
+3. **(Optional) Configure Slack** by setting `SLACK_WEBHOOK_URL`, then validate:
    ```bash
    npm run health-check:validate-slack
    ```
