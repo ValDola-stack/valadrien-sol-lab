@@ -83,6 +83,9 @@ npm run health-check
 npm run health-check:run
 ```
 
+To run this continuously as a **background service** (systemd, Docker, or an
+OS-managed runtime service), see [`deploy/README.md`](deploy/README.md).
+
 ### Configuration
 
 - **Timeout threshold:** 3 seconds (configurable in `scripts/health-check.ts`)

@@ -1,0 +1,48 @@
+# systemd unit for the API health check runner.
+#
+# Runs scripts/health-check-runner.ts continuously (one check every 60s), with
+# automatic restart on crash. This is the canonical "background service" target.
+#
+# Install (on the deploy host, as a user that can read the repo):
+#   1. Clone/deploy the repo to /opt/valadrien-sol-lab (or edit WorkingDirectory).
+#   2. Create the env file:  cp .env.example .env  &&  edit .env  (see deploy/README.md).
+#   3. sudo cp deploy/health-check-runner.service /etc/systemd/system/
+#   4. sudo systemctl daemon-reload
+#   5. sudo systemctl enable --now health-check-runner
+#   6. journalctl -u health-check-runner -f      # tail logs
+#
+# Edit User=, WorkingDirectory=, and EnvironmentFile= to match the host.
+
+[Unit]
+Description=ValAdrien OS API health check runner (every 60s)
+Documentation=https://github.com/ValDola-stack/valadrien-sol-lab
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=valadrien
+WorkingDirectory=/opt/valadrien-sol-lab
+# Secrets and tuning live in the env file — never bake them into this unit.
+EnvironmentFile=/opt/valadrien-sol-lab/.env
+ExecStart=/usr/bin/env npm run health-check:run
+Restart=always
+# Back off on a crash loop so a persistent failure doesn't hammer the box.
+RestartSec=10
+# Surface a tight crash loop instead of restarting forever.
+StartLimitIntervalSec=300
+StartLimitBurst=10
+# Logs go to the journal (journalctl -u health-check-runner).
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=health-check-runner
+
+# --- Light hardening (the runner only needs outbound network + the repo dir) ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/valadrien-sol-lab
+
+[Install]
+WantedBy=multi-user.target
