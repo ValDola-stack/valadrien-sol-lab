@@ -205,6 +205,91 @@ export async function recordFailure(
   return { id: created.id, identifier: created.identifier, created: true };
 }
 
+// ── Generic incident recorder ────────────────────────────────────────────────
+
+export type IncidentPriority = "critical" | "high" | "medium" | "low";
+
+export interface Incident {
+  /** Stable de-dupe key — one rolling issue exists per key at a time. */
+  key: string;
+  /** Issue title used when a fresh incident issue is opened. */
+  title: string;
+  /** One-line summary of what happened. */
+  summary: string;
+  /** Optional structured detail rendered as a bullet list. */
+  details?: Record<string, string | number | undefined>;
+  /** Priority for a newly-opened issue (default `high`). */
+  priority?: IncidentPriority;
+}
+
+function detailLines(details: Record<string, string | number | undefined>): string {
+  return Object.entries(details)
+    .map(([k, v]) => `- **${k}:** ${v ?? "n/a"}`)
+    .join("\n");
+}
+
+/**
+ * Record a generic incident on the OS board, reusing the same credential and
+ * de-dupe machinery as the health alert. The first incident for a key opens an
+ * issue; subsequent incidents with the same key append a comment to it (so a
+ * burst of events — e.g. several stuck runs reaped in one sweep — produces ONE
+ * issue with a running trail rather than a flood of issues / wakes, the same
+ * anti-saturation lesson as VAL-96). Returns the issue touched, or null if the
+ * sink is unconfigured.
+ */
+export async function recordIncident(
+  incident: Incident,
+  at: string
+): Promise<{ id: string; identifier?: string; created: boolean } | null> {
+  const cfg = loadConfig();
+  if (!cfg) {
+    console.error(
+      "[os-alert-sink] OS credentials not configured; skipping incident record."
+    );
+    return null;
+  }
+
+  const body = [
+    incident.summary,
+    incident.details ? `\n${detailLines(incident.details)}` : "",
+    `\n- **At:** ${at}`,
+  ].join("");
+
+  const existing = await findOpenAlert(cfg, incident.key);
+  if (existing) {
+    await api(cfg, "POST", `/api/issues/${existing.id}/comments`, {
+      body: `🛑 ${body}`,
+    });
+    return { id: existing.id, identifier: existing.identifier, created: false };
+  }
+
+  const m = mention(cfg);
+  const description = [
+    markerLine(incident.key),
+    `## 🛑 ${incident.title}`,
+    ``,
+    body,
+    ``,
+    `This issue auto-de-dupes: further incidents with the same key are added as`,
+    `comments here instead of opening new issues.`,
+    m ? `\n${m} — paging on-call.` : ``,
+  ].join("\n");
+
+  const created = await api<IssueLite>(
+    cfg,
+    "POST",
+    `/api/companies/${cfg.companyId}/issues`,
+    {
+      title: incident.title,
+      description,
+      priority: incident.priority ?? "high",
+      status: "todo",
+      ...(cfg.projectId ? { projectId: cfg.projectId } : {}),
+    }
+  );
+  return { id: created.id, identifier: created.identifier, created: true };
+}
+
 /**
  * Record a recovery. If an open alert issue exists for this endpoint, comment
  * "recovered" and close it (status `done`). No-op if nothing is open.
