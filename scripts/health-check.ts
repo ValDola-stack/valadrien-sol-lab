@@ -8,19 +8,18 @@
 import "dotenv/config.js";
 import https from "https";
 import http from "http";
+import {
+  recordFailure,
+  recordRecovery,
+  type HealthCheckResult,
+} from "./os-alert-sink.js";
 
-const HEALTH_URL = "https://os.valadrien.dev/api/health";
-const TIMEOUT_MS = 3000;
-const RETRY_COUNT = 3;
-const RETRY_DELAY_MS = 5000;
-
-interface HealthCheckResult {
-  ok: boolean;
-  status?: number;
-  time?: number;
-  error?: string;
-  endpoint?: string;
-}
+// Endpoint and retry tuning are env-overridable so the same script can be
+// pointed at other endpoints or driven faster in tests/drills.
+const HEALTH_URL = process.env.HEALTH_URL ?? "https://os.valadrien.dev/api/health";
+const TIMEOUT_MS = Number(process.env.HEALTH_TIMEOUT_MS ?? 3000);
+const RETRY_COUNT = Number(process.env.HEALTH_RETRY_COUNT ?? 3);
+const RETRY_DELAY_MS = Number(process.env.HEALTH_RETRY_DELAY_MS ?? 5000);
 
 async function checkHealth(): Promise<HealthCheckResult> {
   return new Promise((resolve) => {
@@ -59,13 +58,20 @@ async function checkHealth(): Promise<HealthCheckResult> {
         res.on("end", () => {
           try {
             const body = JSON.parse(data);
-            const isHealthy =
-              body.status === "ok" && body.bootstrapStatus === "ready";
+            // The live /api/health payload reports readiness via `booting`
+            // (boolean), not `bootstrapStatus`. Healthy = status ok AND not
+            // still booting. A missing `booting` field is treated as ready.
+            const stillBooting = body.booting === true;
+            const isHealthy = body.status === "ok" && !stillBooting;
             resolve({
               ok: isHealthy,
               status: res.statusCode,
               time: elapsed,
-              error: isHealthy ? undefined : "Status not ok or bootstrapping",
+              error: isHealthy
+                ? undefined
+                : stillBooting
+                  ? "API reachable but still booting (not ready)"
+                  : `Status not ok: ${body.status ?? "unknown"}`,
               endpoint: HEALTH_URL,
             });
           } catch {
@@ -185,6 +191,23 @@ async function run() {
       console.log(
         `[${new Date().toISOString()}] ✅ Health check passed (${result.time}ms)`
       );
+      // If a prior failure left an alert issue open, auto-resolve it.
+      try {
+        const resolved = await recordRecovery(
+          result.endpoint,
+          new Date().toISOString()
+        );
+        if (resolved) {
+          console.log(
+            `[${new Date().toISOString()}] ✅ Auto-resolved alert issue ${resolved.identifier ?? resolved.id}`
+          );
+        }
+      } catch (err) {
+        console.error(
+          `[${new Date().toISOString()}] ⚠️  Failed to auto-resolve OS alert:`,
+          err
+        );
+      }
       return;
     }
 
@@ -205,14 +228,28 @@ async function run() {
   );
   console.error(`   Final error: ${lastError?.error}`);
 
+  const at = new Date().toISOString();
+
+  // Primary channel: OS-native alert issue (de-duped + auto-resolving).
   try {
-    await alertToSlack(lastError!);
-    console.log(`[${new Date().toISOString()}] 📢 Alert posted to #eng-alerts`);
+    const alert = await recordFailure(lastError!, at);
+    if (alert) {
+      console.log(
+        `[${at}] 📢 OS alert ${alert.created ? "issue created" : "de-duped onto"} ${alert.identifier ?? alert.id}`
+      );
+    }
   } catch (err) {
-    console.error(
-      `[${new Date().toISOString()}] ❌ Failed to alert to Slack:`,
-      err
-    );
+    console.error(`[${at}] ❌ Failed to record OS alert:`, err);
+  }
+
+  // Optional additional channel: Slack, only when SLACK_WEBHOOK_URL is set.
+  if (process.env.SLACK_WEBHOOK_URL) {
+    try {
+      await alertToSlack(lastError!);
+      console.log(`[${at}] 📢 Alert also posted to #eng-alerts`);
+    } catch (err) {
+      console.error(`[${at}] ❌ Failed to alert to Slack:`, err);
+    }
   }
 }
 
