@@ -1,0 +1,50 @@
+# systemd unit for the heartbeat runner reaper (VAL-97).
+#
+# Runs scripts/reaper-runner.ts continuously: every REAPER_SWEEP_INTERVAL_MS it
+# sweeps the run registry and auto-cancels runs that overstay the queued (>2min)
+# or running (>8min) limits, filing a de-duped incident on the OS board for each
+# cancellation. Restarts automatically on crash.
+#
+# Install (on the deploy host, as a user that can read the repo):
+#   1. Clone/deploy the repo to /opt/valadrien-sol-lab (or edit WorkingDirectory).
+#   2. Create the env file:  cp .env.example .env  &&  edit .env  (see deploy/reaper-runner.md).
+#   3. sudo cp deploy/reaper-runner.service /etc/systemd/system/
+#   4. sudo systemctl daemon-reload
+#   5. sudo systemctl enable --now reaper-runner
+#   6. journalctl -u reaper-runner -f      # tail logs
+#
+# Edit User=, WorkingDirectory=, and EnvironmentFile= to match the host.
+
+[Unit]
+Description=ValAdrien OS heartbeat runner reaper (stuck-run auto-cancel)
+Documentation=https://github.com/ValDola-stack/valadrien-sol-lab
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=valadrien
+WorkingDirectory=/opt/valadrien-sol-lab
+# Secrets and tuning live in the env file — never bake them into this unit.
+EnvironmentFile=/opt/valadrien-sol-lab/.env
+ExecStart=/usr/bin/env npm run reaper:run
+Restart=always
+# Back off on a crash loop so a persistent failure doesn't hammer the box.
+RestartSec=10
+# Surface a tight crash loop instead of restarting forever.
+StartLimitIntervalSec=300
+StartLimitBurst=10
+# Logs go to the journal (journalctl -u reaper-runner).
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=reaper-runner
+
+# --- Light hardening (the reaper needs the repo dir + the run registry) ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/valadrien-sol-lab
+
+[Install]
+WantedBy=multi-user.target
