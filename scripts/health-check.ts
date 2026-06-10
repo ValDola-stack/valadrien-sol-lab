@@ -8,11 +8,20 @@
 import "dotenv/config.js";
 import https from "https";
 import http from "http";
+import os from "os";
+import path from "path";
 import {
   recordFailure,
   recordRecovery,
   type HealthCheckResult,
 } from "./os-alert-sink.js";
+import {
+  loadState,
+  saveState,
+  onFailure,
+  onSuccess,
+  type BreakerConfig,
+} from "./circuit-breaker.js";
 
 // Endpoint and retry tuning are env-overridable so the same script can be
 // pointed at other endpoints or driven faster in tests/drills.
@@ -20,6 +29,17 @@ const HEALTH_URL = process.env.HEALTH_URL ?? "https://os.valadrien.dev/api/healt
 const TIMEOUT_MS = Number(process.env.HEALTH_TIMEOUT_MS ?? 3000);
 const RETRY_COUNT = Number(process.env.HEALTH_RETRY_COUNT ?? 3);
 const RETRY_DELAY_MS = Number(process.env.HEALTH_RETRY_DELAY_MS ?? 5000);
+
+// Circuit-breaker tuning (VAL-96). State persists across the per-cycle
+// subprocess so a sustained outage is throttled instead of writing to the OS
+// board — and waking an automation run — every 60s.
+const CB_STATE_DIR =
+  process.env.HEALTH_CB_STATE_DIR ?? path.join(os.tmpdir(), "valadrien-health-cb");
+const BREAKER_CONFIG: BreakerConfig = {
+  failureThreshold: Number(process.env.HEALTH_CB_FAILURE_THRESHOLD ?? 2),
+  notifyBaseMs: Number(process.env.HEALTH_CB_NOTIFY_BASE_MS ?? 5 * 60_000),
+  notifyMaxMs: Number(process.env.HEALTH_CB_NOTIFY_MAX_MS ?? 30 * 60_000),
+};
 
 async function checkHealth(): Promise<HealthCheckResult> {
   return new Promise((resolve) => {
@@ -191,22 +211,27 @@ async function run() {
       console.log(
         `[${new Date().toISOString()}] ✅ Health check passed (${result.time}ms)`
       );
-      // If a prior failure left an alert issue open, auto-resolve it.
-      try {
-        const resolved = await recordRecovery(
-          result.endpoint,
-          new Date().toISOString()
-        );
-        if (resolved) {
-          console.log(
-            `[${new Date().toISOString()}] ✅ Auto-resolved alert issue ${resolved.identifier ?? resolved.id}`
+      // Advance the breaker. Only resolve the alert on the open→closed
+      // transition so a steady-state healthy endpoint doesn't touch the board.
+      const endpoint = result.endpoint ?? HEALTH_URL;
+      const prev = loadState(CB_STATE_DIR, endpoint, Date.now());
+      const { state, decision } = onSuccess(prev, BREAKER_CONFIG, Date.now());
+      saveState(CB_STATE_DIR, state);
+
+      if (decision.shouldNotifyRecovery) {
+        try {
+          const resolved = await recordRecovery(endpoint, new Date().toISOString());
+          if (resolved) {
+            console.log(
+              `[${new Date().toISOString()}] ✅ Auto-resolved alert issue ${resolved.identifier ?? resolved.id} (circuit closed)`
+            );
+          }
+        } catch (err) {
+          console.error(
+            `[${new Date().toISOString()}] ⚠️  Failed to auto-resolve OS alert:`,
+            err
           );
         }
-      } catch (err) {
-        console.error(
-          `[${new Date().toISOString()}] ⚠️  Failed to auto-resolve OS alert:`,
-          err
-        );
       }
       return;
     }
@@ -229,6 +254,23 @@ async function run() {
   console.error(`   Final error: ${lastError?.error}`);
 
   const at = new Date().toISOString();
+
+  // Circuit breaker: decide whether this failure is allowed to touch the alert
+  // sink. This is the cascade guard — without it, a sustained outage wrote to
+  // the OS board (and woke an automation run) every 60s (VAL-96 / VAL-88).
+  const endpoint = lastError!.endpoint ?? HEALTH_URL;
+  const prev = loadState(CB_STATE_DIR, endpoint, Date.now());
+  const { state, decision } = onFailure(prev, BREAKER_CONFIG, Date.now());
+  saveState(CB_STATE_DIR, state);
+
+  if (!decision.shouldNotify) {
+    console.log(
+      `[${at}] 🔇 Alert suppressed (circuit ${decision.state}): ${decision.reason}`
+    );
+    return;
+  }
+
+  console.log(`[${at}] ⚡ Circuit ${decision.state}: ${decision.reason} — notifying`);
 
   // Primary channel: OS-native alert issue (de-duped + auto-resolving).
   try {

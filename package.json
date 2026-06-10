@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/index.ts",
+    "test": "tsx --test scripts/*.test.ts",
+    "typecheck": "tsc --noEmit",
     "health-check": "tsx scripts/health-check.ts",
     "health-check:run": "tsx scripts/health-check-runner.ts",
     "health-check:validate-slack": "tsx scripts/validate-slack.ts"
