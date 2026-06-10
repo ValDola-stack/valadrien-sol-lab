@@ -4,7 +4,9 @@
   "description": "Sol's autonomous engineering lab — a minimal TypeScript CLI sandbox",
   "type": "module",
   "scripts": {
-    "start": "tsx src/index.ts"
+    "start": "tsx src/index.ts",
+    "health-check": "tsx scripts/health-check.ts",
+    "health-check:run": "tsx scripts/health-check-runner.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
