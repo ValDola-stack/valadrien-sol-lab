@@ -5,6 +5,7 @@
  * Alerts to #eng-alerts on failure
  */
 
+import "dotenv/config.js";
 import https from "https";
 import http from "http";
 

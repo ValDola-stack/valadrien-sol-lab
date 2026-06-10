@@ -4,6 +4,7 @@
  * Designed to run as a background process
  */
 
+import "dotenv/config.js";
 import { spawn } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
