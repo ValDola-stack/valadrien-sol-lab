@@ -214,8 +214,9 @@ async function run() {
       // Advance the breaker. Only resolve the alert on the open→closed
       // transition so a steady-state healthy endpoint doesn't touch the board.
       const endpoint = result.endpoint ?? HEALTH_URL;
-      const prev = loadState(CB_STATE_DIR, endpoint, Date.now());
-      const { state, decision } = onSuccess(prev, BREAKER_CONFIG, Date.now());
+      const now = Date.now();
+      const prev = loadState(CB_STATE_DIR, endpoint, now);
+      const { state, decision } = onSuccess(prev, BREAKER_CONFIG, now);
       saveState(CB_STATE_DIR, state);
 
       if (decision.shouldNotifyRecovery) {
@@ -259,8 +260,9 @@ async function run() {
   // sink. This is the cascade guard — without it, a sustained outage wrote to
   // the OS board (and woke an automation run) every 60s (VAL-96 / VAL-88).
   const endpoint = lastError!.endpoint ?? HEALTH_URL;
-  const prev = loadState(CB_STATE_DIR, endpoint, Date.now());
-  const { state, decision } = onFailure(prev, BREAKER_CONFIG, Date.now());
+  const now = Date.now();
+  const prev = loadState(CB_STATE_DIR, endpoint, now);
+  const { state, decision } = onFailure(prev, BREAKER_CONFIG, now);
   saveState(CB_STATE_DIR, state);
 
   if (!decision.shouldNotify) {

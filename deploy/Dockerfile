@@ -18,10 +18,14 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# App sources.
+# App sources. The health-check scripts never import src/ (that's the API
+# entrypoint), so only scripts/ + tsconfig.json are needed at runtime.
 COPY tsconfig.json ./
-COPY src ./src
 COPY scripts ./scripts
+
+# Drop to the unprivileged user the base image ships — the runner only needs
+# outbound network + its own files, never root.
+USER node
 
 # Restart-on-failure is handled by the container runtime (--restart=always) or
 # the orchestrator; the runner itself also loops forever.

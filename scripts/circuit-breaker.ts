@@ -51,7 +51,6 @@ export interface BreakerState {
   endpoint: string;
   state: CircuitState;
   consecutiveFailures: number;
-  consecutiveSuccesses: number;
   /** When the circuit last opened (ms epoch), or null while closed. */
   openedAt: number | null;
   /** When we last emitted a failure notification (ms epoch), or null. */
@@ -90,7 +89,6 @@ export function initialState(endpoint: string, now: number): BreakerState {
     endpoint,
     state: "closed",
     consecutiveFailures: 0,
-    consecutiveSuccesses: 0,
     openedAt: null,
     lastNotifyAt: null,
     notifyCount: 0,
@@ -114,7 +112,7 @@ export function onFailure(
   now: number
 ): { state: BreakerState; decision: FailureDecision } {
   const consecutiveFailures = prev.consecutiveFailures + 1;
-  const base = { ...prev, consecutiveFailures, consecutiveSuccesses: 0, updatedAt: now };
+  const base = { ...prev, consecutiveFailures, updatedAt: now };
 
   // Below threshold: hold the alert. One transient failing cycle should not
   // escalate to the board (cycle-level "retry before declaring failure").
@@ -187,7 +185,6 @@ export function onSuccess(
       ...prev,
       state: "closed",
       consecutiveFailures: 0,
-      consecutiveSuccesses: prev.consecutiveSuccesses + 1,
       openedAt: null,
       lastNotifyAt: null,
       notifyCount: 0,

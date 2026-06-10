@@ -37,6 +37,7 @@ cp .env.example .env
 | `HEALTH_TIMEOUT_MS`            | no       | Per-request timeout (default `3000`).                             |
 | `HEALTH_RETRY_COUNT`           | no       | Attempts before alerting (default `3`).                           |
 | `HEALTH_RETRY_DELAY_MS`        | no       | Delay between retries (default `5000`).                           |
+| `HEALTH_CB_STATE_DIR`          | no       | Circuit-breaker state dir (default `os.tmpdir()`). Set to a persistent path under systemd — see Option A. |
 
 If the OS credentials are absent the sink no-ops (logs a warning) and the check
 still runs — useful for a connectivity-only smoke test.
@@ -52,6 +53,16 @@ sudo cp deploy/health-check-runner.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now health-check-runner
 journalctl -u health-check-runner -f
+```
+
+**Persist the circuit-breaker state.** The unit sets `PrivateTmp=true`, which gives
+the service a private `/tmp` that is wiped on every (re)start. The breaker defaults
+to `os.tmpdir()`, so a crash+restart mid-outage would lose the open-circuit state
+and re-page on the next failing cycle. Point it at a path inside `ReadWritePaths`
+(`/opt/valadrien-sol-lab`) instead — add to the env file:
+
+```
+HEALTH_CB_STATE_DIR=/opt/valadrien-sol-lab/cb-state
 ```
 
 ## Option B — Docker
