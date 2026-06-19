@@ -5,6 +5,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import * as schema from "./schema/index.js";
+import { withDbRetry, DEFAULT_RETRY_CONFIG, type RetryConfig, type RetryHooks } from "./db-retry.js";
 
 const MIGRATIONS_FOLDER = fileURLToPath(new URL("./migrations", import.meta.url));
 const DRIZZLE_MIGRATIONS_TABLE = "__drizzle_migrations";
@@ -12,6 +13,11 @@ const MIGRATIONS_JOURNAL_JSON = fileURLToPath(new URL("./migrations/meta/_journa
 
 function createUtilitySql(url: string) {
   return postgres(url, { max: 1, onnotice: () => {} });
+}
+
+/** Like createUtilitySql but wraps the connection with retry logic for transient failures. */
+async function createUtilitySqlWithRetry(url: string): Promise<ReturnType<typeof postgres>> {
+  return createPostgresWithRetry(url, { max: 1, onnotice: () => {} });
 }
 
 function isSafeIdentifier(value: string): boolean {
@@ -44,6 +50,26 @@ export type MigrationState =
       pendingMigrations: string[];
       reason: "no-migration-journal-empty-db" | "no-migration-journal-non-empty-db" | "pending-migrations";
     };
+
+export type PostgresOptions = Exclude<Parameters<typeof postgres>[1], undefined>;
+
+/**
+ * Wraps the `postgres()` connection call with retry logic so transient pooler
+ * failures (CONNECT_TIMEOUT, admin shutdown, etc.) self-heal on a warm retry
+ * instead of bubbling up immediately.
+ *
+ * Retry config mirrors DEFAULT_RETRY_CONFIG: up to 4 attempts, exponential
+ * backoff 50→100→200→500ms capped at 2s, equal jitter.
+ */
+export async function createPostgresWithRetry(
+  url: string,
+  options?: PostgresOptions,
+  retryCfg?: Partial<RetryConfig>,
+  hooks?: RetryHooks,
+): Promise<ReturnType<typeof postgres>> {
+  const cfg = { ...DEFAULT_RETRY_CONFIG, ...retryCfg };
+  return withDbRetry(() => Promise.resolve(postgres(url, options)), cfg, hooks);
+}
 
 export function createDb(url: string) {
   // Serverless (Vercel) instances are ephemeral and arrive in bursts (the SPA fires

@@ -1,5 +1,6 @@
 export {
   createDb,
+  createPostgresWithRetry,
   getPostgresDataDirectory,
   ensurePostgresDatabase,
   inspectMigrations,
@@ -10,6 +11,7 @@ export {
   migratePostgresIfEmpty,
   type MigrationBootstrapResult,
   type Db,
+  type PostgresOptions,
 } from "./client.js";
 export {
   getEmbeddedPostgresTestSupport,
@@ -34,6 +36,17 @@ export {
   ensureLinuxSharedLibraryAliases,
   prepareEmbeddedPostgresNativeRuntime,
 } from "./embedded-postgres-native.js";
+export {
+  classifyDbError,
+  createRetryMetrics,
+  DEFAULT_RETRY_CONFIG,
+  retryDelayMs,
+  withDbRetry,
+  type DbErrorClass,
+  type RetryConfig,
+  type RetryHooks,
+  type RetryMetrics,
+} from "./db-retry.js";
 export { issueRelations } from "./schema/issue_relations.js";
 export { issueReferenceMentions } from "./schema/issue_reference_mentions.js";
 export * from "./schema/index.js";
