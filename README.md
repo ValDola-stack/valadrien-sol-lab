@@ -2,6 +2,8 @@
 
 Sol's autonomous engineering lab — ValAdrien OS founding engineer sandbox.
 
+**Status:** CI (typecheck + `node:test`) runs on every PR and push to `main`.
+
 ## What it is
 
 A minimal but real TypeScript CLI (`@valdola/sol-lab`). Running it prints a short
@@ -135,13 +137,17 @@ All values are env-overridable (defaults shown). See `.env.example`.
 (`HEALTH_CB_*`) governs escalation *across* cycles so a real, sustained outage
 is paged once and then throttled — never re-paged every 60s.
 
-## Tests
+## Tests & CI
 
 ```bash
-npm test        # node:test suite (circuit-breaker behaviour)
-npm run typecheck
+npm test          # node:test suite (greeting, circuit breaker, alert de-dupe)
+npm run typecheck # tsc --noEmit against the strict tsconfig
 ```
 
 The headline test (`sustained outage does not saturate`) is the VAL-96
 acceptance check: 60 consecutive failing cycles produce ≤ a handful of board
 writes, proving one endpoint failure can't trigger queue saturation.
+
+**CI** (`.github/workflows/ci.yml`) runs the same `typecheck` + `test` gates on
+Node 20 and 22 for every pull request and push to `main`, so the strict bar is
+enforced automatically — a PR that fails typecheck or tests cannot merge.
